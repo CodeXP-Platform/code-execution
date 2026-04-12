@@ -29,9 +29,12 @@ Variables principales:
 - `EUREKA_USERNAME`
 - `EUREKA_PASSWORD`
 - `EUREKA_SERVICE_NAME`
+- `EUREKA_PORT`
 - `EUREKA_INSTANCE_ID`
 - `EUREKA_IP_ADDR`
 - `EUREKA_HEARTBEAT_INTERVAL`
+
+Si `EUREKA_PORT` está vacío, se usa automáticamente el valor de `APP_PORT`.
 
 ## Levantar dependencias locales
 

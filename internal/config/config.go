@@ -3,9 +3,12 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/joho/godotenv"
 )
 
 type Config struct {
@@ -25,19 +28,34 @@ type EurekaConfig struct {
 	ServiceName       string
 	InstanceID        string
 	IPAddr            string
+	Port              int
 	HeartbeatInterval time.Duration
 }
 
 func Load() (Config, error) {
-	appName := getEnv("APP_NAME", "code-execution-api")
-	appHost := getEnv("APP_HOST", "localhost")
-	appPort := getEnv("APP_PORT", "8080")
+	if err := loadDotEnv(); err != nil {
+		return Config{}, err
+	}
 
-	if _, err := strconv.Atoi(appPort); err != nil {
+	appName := getEnv("APP_NAME", "code-execution")
+	appHost := getEnv("APP_HOST", "localhost")
+	appPort := getEnv("APP_PORT", "8082")
+
+	fmt.Println("APP_NAME:", appName)
+	fmt.Println("APP_HOST:", appHost)
+	fmt.Println("APP_PORT:", appPort)
+
+	appPortNumber, err := strconv.Atoi(appPort)
+	if err != nil {
 		return Config{}, fmt.Errorf("invalid APP_PORT value %q: %w", appPort, err)
 	}
 
 	eurekaEnabled, err := getBool("EUREKA_ENABLED", true)
+	if err != nil {
+		return Config{}, err
+	}
+
+	eurekaPort, err := getInt("EUREKA_PORT", appPortNumber)
 	if err != nil {
 		return Config{}, err
 	}
@@ -48,14 +66,31 @@ func Load() (Config, error) {
 	}
 
 	eurekaServiceName := getEnv("EUREKA_SERVICE_NAME", appName)
-	eurekaInstanceID := getEnv("EUREKA_INSTANCE_ID", fmt.Sprintf("%s:%s:%s", strings.ToLower(appName), appHost, appPort))
+	eurekaInstanceID := getEnv("EUREKA_INSTANCE_ID", "")
+	if eurekaInstanceID == "" {
+		eurekaInstanceID = fmt.Sprintf("%s:%s:%d", strings.ToLower(appName), appHost, eurekaPort)
+	}
+
+	postgresURL := getEnv("POSTGRES_URL", "postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable")
+	rabbitURL := getEnv("RABBITMQ_URL", "amqp://rabbitmq:rabbitmq@localhost:5672/")
+
+	fmt.Println("POSTGRES_URL:", postgresURL)
+	fmt.Println("RABBITMQ_URL:", rabbitURL)
+
+	fmt.Println("EUREKA_ENABLED:", eurekaEnabled)
+	fmt.Println("EUREKA_BASE_URL:", getEnv("EUREKA_BASE_URL", "http://localhost:8761/eureka"))
+	fmt.Println("EUREKA_SERVICE_NAME:", strings.ToUpper(eurekaServiceName))
+	fmt.Println("EUREKA_INSTANCE_ID:", eurekaInstanceID)
+	fmt.Println("EUREKA_PORT:", eurekaPort)
+	fmt.Println("EUREKA_IP_ADDR:", getEnv("EUREKA_IP_ADDR", appHost))
+	fmt.Println("EUREKA_HEARTBEAT_INTERVAL:", eurekaHeartbeatInterval)
 
 	return Config{
 		AppName:     appName,
 		AppHost:     appHost,
 		AppPort:     appPort,
-		PostgresURL: getEnv("POSTGRES_URL", "postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable"),
-		RabbitMQURL: getEnv("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/"),
+		PostgresURL: postgresURL,
+		RabbitMQURL: rabbitURL,
 		Eureka: EurekaConfig{
 			Enabled:           eurekaEnabled,
 			BaseURL:           getEnv("EUREKA_BASE_URL", "http://localhost:8761/eureka"),
@@ -64,6 +99,7 @@ func Load() (Config, error) {
 			ServiceName:       strings.ToUpper(eurekaServiceName),
 			InstanceID:        eurekaInstanceID,
 			IPAddr:            getEnv("EUREKA_IP_ADDR", appHost),
+			Port:              eurekaPort,
 			HeartbeatInterval: eurekaHeartbeatInterval,
 		},
 	}, nil
@@ -97,4 +133,33 @@ func getDuration(key string, fallback time.Duration) (time.Duration, error) {
 		return 0, fmt.Errorf("invalid %s value %q: %w", key, raw, err)
 	}
 	return parsed, nil
+}
+
+func getInt(key string, fallback int) (int, error) {
+	raw := getEnv(key, strconv.Itoa(fallback))
+	parsed, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, fmt.Errorf("invalid %s value %q: %w", key, raw, err)
+	}
+	if parsed <= 0 {
+		return 0, fmt.Errorf("invalid %s value %q: must be > 0", key, raw)
+	}
+	return parsed, nil
+}
+
+func loadDotEnv() error {
+	paths := []string{".env", "../.env", "../../.env"}
+
+	for _, path := range paths {
+		cleanPath := filepath.Clean(path)
+		err := godotenv.Load(cleanPath)
+		if err == nil {
+			return nil
+		}
+		if !os.IsNotExist(err) {
+			return fmt.Errorf("failed to load %s: %w", cleanPath, err)
+		}
+	}
+
+	return nil
 }
