@@ -9,7 +9,6 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
 
@@ -45,7 +44,7 @@ func (c *Client) Register(ctx context.Context) error {
 			"ipAddr":     c.cfg.IPAddr,
 			"status":     "UP",
 			"port": map[string]any{
-				"$":        getPort(c.cfg.InstanceID),
+				"$":        c.cfg.Port,
 				"@enabled": "true",
 			},
 			"vipAddress":       strings.ToLower(c.cfg.ServiceName),
@@ -179,17 +178,4 @@ func (c *Client) baseURL() string {
 		return base
 	}
 	return base + "/eureka"
-}
-
-func getPort(instanceID string) int {
-	parts := strings.Split(instanceID, ":")
-	if len(parts) == 0 {
-		return 8080
-	}
-	last := parts[len(parts)-1]
-	port, err := strconv.Atoi(last)
-	if err != nil {
-		return 8080
-	}
-	return port
 }

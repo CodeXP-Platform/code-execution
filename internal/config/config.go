@@ -3,9 +3,12 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/joho/godotenv"
 )
 
 type Config struct {
@@ -15,6 +18,8 @@ type Config struct {
 	PostgresURL string
 	RabbitMQURL string
 	Eureka      EurekaConfig
+	Execution   ExecutionConfig
+	Messaging   MessagingConfig
 }
 
 type EurekaConfig struct {
@@ -25,19 +30,54 @@ type EurekaConfig struct {
 	ServiceName       string
 	InstanceID        string
 	IPAddr            string
+	Port              int
 	HeartbeatInterval time.Duration
 }
 
-func Load() (Config, error) {
-	appName := getEnv("APP_NAME", "code-execution-api")
-	appHost := getEnv("APP_HOST", "localhost")
-	appPort := getEnv("APP_PORT", "8080")
+type ExecutionConfig struct {
+	TimeoutMs     int
+	MemoryLimitMb int
+	CPULimitMs    int
+	Sandbox       SandboxConfig
+}
 
-	if _, err := strconv.Atoi(appPort); err != nil {
+type SandboxConfig struct {
+	DockerBinary    string
+	PythonImage     string
+	JavaScriptImage string
+	JavaImage       string
+	CPPImage        string
+}
+
+type MessagingConfig struct {
+	RequestedExchange   string
+	RequestedQueue      string
+	RequestedRoutingKey string
+	ExecutionExchange   string
+	StartedRoutingKey   string
+	CompletedRoutingKey string
+}
+
+func Load() (Config, error) {
+	if err := loadDotEnv(); err != nil {
+		return Config{}, err
+	}
+
+	appName := getEnv("APP_NAME", "code-execution")
+	appHost := getEnv("APP_HOST", "localhost")
+	appPort := getEnv("APP_PORT", "8082")
+
+	appPortNumber, err := strconv.Atoi(appPort)
+	if err != nil {
 		return Config{}, fmt.Errorf("invalid APP_PORT value %q: %w", appPort, err)
 	}
 
 	eurekaEnabled, err := getBool("EUREKA_ENABLED", true)
+	if err != nil {
+		return Config{}, err
+	}
+
+	eurekaPort, err := getInt("EUREKA_PORT", appPortNumber)
 	if err != nil {
 		return Config{}, err
 	}
@@ -48,7 +88,25 @@ func Load() (Config, error) {
 	}
 
 	eurekaServiceName := getEnv("EUREKA_SERVICE_NAME", appName)
-	eurekaInstanceID := getEnv("EUREKA_INSTANCE_ID", fmt.Sprintf("%s:%s:%s", strings.ToLower(appName), appHost, appPort))
+	eurekaInstanceID := getEnv("EUREKA_INSTANCE_ID", "")
+	if eurekaInstanceID == "" {
+		eurekaInstanceID = fmt.Sprintf("%s:%s:%d", strings.ToLower(appName), appHost, eurekaPort)
+	}
+
+	timeoutMs, err := getInt("EXECUTION_TIMEOUT_MS", 2000)
+	if err != nil {
+		return Config{}, err
+	}
+
+	memoryLimitMb, err := getInt("EXECUTION_MEMORY_LIMIT_MB", 128)
+	if err != nil {
+		return Config{}, err
+	}
+
+	cpuLimitMs, err := getInt("EXECUTION_CPU_LIMIT_MS", 1000)
+	if err != nil {
+		return Config{}, err
+	}
 
 	return Config{
 		AppName:     appName,
@@ -64,7 +122,28 @@ func Load() (Config, error) {
 			ServiceName:       strings.ToUpper(eurekaServiceName),
 			InstanceID:        eurekaInstanceID,
 			IPAddr:            getEnv("EUREKA_IP_ADDR", appHost),
+			Port:              eurekaPort,
 			HeartbeatInterval: eurekaHeartbeatInterval,
+		},
+		Execution: ExecutionConfig{
+			TimeoutMs:     timeoutMs,
+			MemoryLimitMb: memoryLimitMb,
+			CPULimitMs:    cpuLimitMs,
+			Sandbox: SandboxConfig{
+				DockerBinary:    getEnv("SANDBOX_DOCKER_BINARY", "docker"),
+				PythonImage:     getEnv("SANDBOX_PYTHON_IMAGE", "python:3.12-alpine"),
+				JavaScriptImage: getEnv("SANDBOX_JAVASCRIPT_IMAGE", "node:20-alpine"),
+				JavaImage:       getEnv("SANDBOX_JAVA_IMAGE", "eclipse-temurin:21-jdk-alpine"),
+				CPPImage:        getEnv("SANDBOX_CPP_IMAGE", "gcc:14"),
+			},
+		},
+		Messaging: MessagingConfig{
+			RequestedExchange:   getEnv("REQUESTED_EVENT_EXCHANGE", "challenges.solutions.exchange"),
+			RequestedQueue:      getEnv("REQUESTED_EVENT_QUEUE", "codeexecution.solution.execution.requested"),
+			RequestedRoutingKey: getEnv("REQUESTED_EVENT_ROUTING_KEY", "challenges.solution.execution.requested"),
+			ExecutionExchange:   getEnv("EXECUTION_EVENT_EXCHANGE", "codeexecution.exchange"),
+			StartedRoutingKey:   getEnv("STARTED_EVENT_ROUTING_KEY", "codeexecution.solution.execution.started"),
+			CompletedRoutingKey: getEnv("COMPLETED_EVENT_ROUTING_KEY", "codeexecution.solution.execution.completed"),
 		},
 	}, nil
 }
@@ -97,4 +176,33 @@ func getDuration(key string, fallback time.Duration) (time.Duration, error) {
 		return 0, fmt.Errorf("invalid %s value %q: %w", key, raw, err)
 	}
 	return parsed, nil
+}
+
+func getInt(key string, fallback int) (int, error) {
+	raw := getEnv(key, strconv.Itoa(fallback))
+	parsed, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, fmt.Errorf("invalid %s value %q: %w", key, raw, err)
+	}
+	if parsed <= 0 {
+		return 0, fmt.Errorf("invalid %s value %q: must be > 0", key, raw)
+	}
+	return parsed, nil
+}
+
+func loadDotEnv() error {
+	paths := []string{".env", "../.env", "../../.env"}
+
+	for _, path := range paths {
+		cleanPath := filepath.Clean(path)
+		err := godotenv.Load(cleanPath)
+		if err == nil {
+			return nil
+		}
+		if !os.IsNotExist(err) {
+			return fmt.Errorf("failed to load %s: %w", cleanPath, err)
+		}
+	}
+
+	return nil
 }

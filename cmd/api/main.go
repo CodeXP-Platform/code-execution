@@ -13,6 +13,7 @@ import (
 	"code-execution/internal/config"
 	"code-execution/internal/db"
 	"code-execution/internal/discovery"
+	"code-execution/internal/execution/module"
 	"code-execution/internal/messaging"
 	"code-execution/internal/server"
 )
@@ -41,6 +42,19 @@ func main() {
 	}
 	defer rabbitConn.Close()
 
+	log.Printf("Fase: Inicialización del Módulo de Ejecución")
+	executionModule, err := module.New(ctx, cfg, pool, rabbitConn)
+	if err != nil {
+		log.Fatalf("execution module initialization error: %v", err)
+	}
+
+	consumerCtx, consumerCancel := context.WithCancel(context.Background())
+	defer consumerCancel()
+
+	if err := executionModule.StartConsumers(consumerCtx); err != nil {
+		log.Fatalf("execution consumers initialization error: %v", err)
+	}
+
 	log.Printf("Fase: Configuración de Service Discovery (Eureka)")
 	eurekaClient := discovery.NewClient(cfg.Eureka)
 	heartbeatCtx, heartbeatCancel := context.WithCancel(context.Background())
@@ -60,7 +74,7 @@ func main() {
 	}
 
 	log.Printf("Fase: Configuración del servidor HTTP")
-	router := server.NewRouter(cfg, pool, rabbitConn)
+	router := server.NewRouter(cfg, executionModule.HTTPHandler)
 
 	httpServer := &http.Server{
 		Addr:         ":" + cfg.AppPort,
@@ -91,6 +105,7 @@ func main() {
 
 	log.Printf("Iniciando proceso de apagado gradual (Graceful Shutdown)...")
 	heartbeatCancel()
+	consumerCancel()
 
 	if cfg.Eureka.Enabled {
 		log.Printf("Dando de baja instancia en Eureka...")
