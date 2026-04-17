@@ -13,14 +13,14 @@ func NewRouter(cfg config.Config, executionHandler *executionhttp.Handler) *gin.
 	router := gin.New()
 	router.Use(gin.Recovery(), gin.Logger())
 
-	router.GET("/health", func(c *gin.Context) {
+	router.GET("/api/v1/code-execution/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"service": cfg.AppName,
 			"status":  "UP",
 		})
 	})
 
-	router.GET("/api/v1/ping", func(c *gin.Context) {
+	router.GET("/api/v1/code-execution/ping", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"message": "pong",
 			"service": cfg.AppName,
