@@ -197,16 +197,16 @@ func pythonTemplate() domain.LanguageTemplate {
 		Version:    "2026.04",
 		Entrypoint: "main.py",
 		RunnerTemplate: `# {{USER_CODE}}
+# parse_args es helper inyectado por el runner del sandbox
 
 def _normalize(value: str) -> str:
-	return value.replace("\r\n", "\n").rstrip()
+		return value.replace("\r\n", "\n").rstrip()
 
 if __name__ == "__main__":
-	args = """{{TEST_INPUT}}"""
-	expected = """{{EXPECTED_OUTPUT}}"""
-	actual = {{FUNCTION_CALL}}
-	print(_normalize(str(actual)))
-`,
+		args = """{{TEST_INPUT}}"""
+		expected = """{{EXPECTED_OUTPUT}}"""
+		actual = {{ENTRY_FUNCTION_NAME}}(*parse_args(args))
+		print(_normalize(str(actual)))`,
 		CompileCommand: nil,
 		RunCommand:     "python main.py",
 		Enabled:        true,
@@ -221,16 +221,16 @@ func javascriptTemplate() domain.LanguageTemplate {
 		Version:    "2026.04",
 		Entrypoint: "main.js",
 		RunnerTemplate: `// {{USER_CODE}}
+// parseArgs es helper inyectado por el runner del sandbox
 
 function normalize(value) {
 	return String(value).replace(/\r\n/g, "\n").trimEnd();
 }
 
-const testInput = "{{TEST_INPUT}}";
-const expected = "{{EXPECTED_OUTPUT}}";
-const actual = {{FUNCTION_CALL}};
-process.stdout.write(normalize(actual));
-`,
+const testInput = ` + "`{{TEST_INPUT}}`;\n" +
+			`const expected = ` + "`{{EXPECTED_OUTPUT}}`;\n" +
+			`const actual = globalThis["{{ENTRY_FUNCTION_NAME}}"](...parseArgs(testInput));
+process.stdout.write(normalize(actual));`,
 		CompileCommand: nil,
 		RunCommand:     "node main.js",
 		Enabled:        true,
@@ -248,6 +248,7 @@ func javaTemplate() domain.LanguageTemplate {
 		RunnerTemplate: `import java.util.*;
 
 // {{USER_CODE}}
+// parseArgs es helper inyectado por el runner del sandbox
 
 public class Main {
 	static String normalize(String value) {
@@ -257,11 +258,10 @@ public class Main {
 	public static void main(String[] args) {
 		String input = "{{TEST_INPUT}}";
 		String expected = "{{EXPECTED_OUTPUT}}";
-		Object actual = {{FUNCTION_CALL}};
-		System.out.print(normalize(String.valueOf(actual)));
+		String actual = {{ENTRY_FUNCTION_NAME}}(parseArgs(input));
+		System.out.print(normalize(actual));
 	}
-}
-`,
+}`,
 		CompileCommand: &compile,
 		RunCommand:     "java Main",
 		Enabled:        true,
@@ -280,35 +280,30 @@ func cppTemplate() domain.LanguageTemplate {
 using namespace std;
 
 // {{USER_CODE}}
-
-template <typename T>
-string toPrintable(const T& value) {
-	ostringstream out;
-	out << value;
-	return out.str();
-}
+// parseArgs es helper inyectado por el runner del sandbox
 
 string normalize(string value) {
-	while (!value.empty() && (value.back() == '\n' || value.back() == '\r' || value.back() == ' ' || value.back() == '\t')) {
-		value.pop_back();
-	}
-	return value;
+		while (!value.empty() && (value.back() == '\n' || value.back() == '\r' || value.back() == ' ' || value.back() == '\t')) {
+				value.pop_back();
+		}
+		return value;
 }
 
 int main() {
-	string input = R"({{TEST_INPUT}})";
-	string expected = R"({{EXPECTED_OUTPUT}})";
-	auto actual = {{FUNCTION_CALL}};
-	cout << normalize(toPrintable(actual));
-	return 0;
-}
-`,
+		string input = R"({{TEST_INPUT}})";
+		string expected = R"({{EXPECTED_OUTPUT}})";
+		auto args = parseArgs(input);
+		string actual = {{ENTRY_FUNCTION_NAME}}(args);
+		cout << normalize(actual);
+		return 0;
+}`,
 		CompileCommand: &compile,
 		RunCommand:     "./main",
 		Enabled:        true,
 		UpdatedAt:      time.Now().UTC(),
 	}
 }
+
 func newRandomID() string {
 	buffer := make([]byte, 16)
 	if _, err := rand.Read(buffer); err != nil {
