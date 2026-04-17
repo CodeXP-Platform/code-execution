@@ -18,6 +18,8 @@ type Config struct {
 	PostgresURL string
 	RabbitMQURL string
 	Eureka      EurekaConfig
+	Execution   ExecutionConfig
+	Messaging   MessagingConfig
 }
 
 type EurekaConfig struct {
@@ -32,6 +34,30 @@ type EurekaConfig struct {
 	HeartbeatInterval time.Duration
 }
 
+type ExecutionConfig struct {
+	TimeoutMs     int
+	MemoryLimitMb int
+	CPULimitMs    int
+	Sandbox       SandboxConfig
+}
+
+type SandboxConfig struct {
+	DockerBinary    string
+	PythonImage     string
+	JavaScriptImage string
+	JavaImage       string
+	CPPImage        string
+}
+
+type MessagingConfig struct {
+	RequestedExchange   string
+	RequestedQueue      string
+	RequestedRoutingKey string
+	ExecutionExchange   string
+	StartedRoutingKey   string
+	CompletedRoutingKey string
+}
+
 func Load() (Config, error) {
 	if err := loadDotEnv(); err != nil {
 		return Config{}, err
@@ -40,10 +66,6 @@ func Load() (Config, error) {
 	appName := getEnv("APP_NAME", "code-execution")
 	appHost := getEnv("APP_HOST", "localhost")
 	appPort := getEnv("APP_PORT", "8082")
-
-	fmt.Println("APP_NAME:", appName)
-	fmt.Println("APP_HOST:", appHost)
-	fmt.Println("APP_PORT:", appPort)
 
 	appPortNumber, err := strconv.Atoi(appPort)
 	if err != nil {
@@ -71,26 +93,27 @@ func Load() (Config, error) {
 		eurekaInstanceID = fmt.Sprintf("%s:%s:%d", strings.ToLower(appName), appHost, eurekaPort)
 	}
 
-	postgresURL := getEnv("POSTGRES_URL", "postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable")
-	rabbitURL := getEnv("RABBITMQ_URL", "amqp://rabbitmq:rabbitmq@localhost:5672/")
+	timeoutMs, err := getInt("EXECUTION_TIMEOUT_MS", 2000)
+	if err != nil {
+		return Config{}, err
+	}
 
-	fmt.Println("POSTGRES_URL:", postgresURL)
-	fmt.Println("RABBITMQ_URL:", rabbitURL)
+	memoryLimitMb, err := getInt("EXECUTION_MEMORY_LIMIT_MB", 128)
+	if err != nil {
+		return Config{}, err
+	}
 
-	fmt.Println("EUREKA_ENABLED:", eurekaEnabled)
-	fmt.Println("EUREKA_BASE_URL:", getEnv("EUREKA_BASE_URL", "http://localhost:8761/eureka"))
-	fmt.Println("EUREKA_SERVICE_NAME:", strings.ToUpper(eurekaServiceName))
-	fmt.Println("EUREKA_INSTANCE_ID:", eurekaInstanceID)
-	fmt.Println("EUREKA_PORT:", eurekaPort)
-	fmt.Println("EUREKA_IP_ADDR:", getEnv("EUREKA_IP_ADDR", appHost))
-	fmt.Println("EUREKA_HEARTBEAT_INTERVAL:", eurekaHeartbeatInterval)
+	cpuLimitMs, err := getInt("EXECUTION_CPU_LIMIT_MS", 1000)
+	if err != nil {
+		return Config{}, err
+	}
 
 	return Config{
 		AppName:     appName,
 		AppHost:     appHost,
 		AppPort:     appPort,
-		PostgresURL: postgresURL,
-		RabbitMQURL: rabbitURL,
+		PostgresURL: getEnv("POSTGRES_URL", "postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable"),
+		RabbitMQURL: getEnv("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/"),
 		Eureka: EurekaConfig{
 			Enabled:           eurekaEnabled,
 			BaseURL:           getEnv("EUREKA_BASE_URL", "http://localhost:8761/eureka"),
@@ -101,6 +124,26 @@ func Load() (Config, error) {
 			IPAddr:            getEnv("EUREKA_IP_ADDR", appHost),
 			Port:              eurekaPort,
 			HeartbeatInterval: eurekaHeartbeatInterval,
+		},
+		Execution: ExecutionConfig{
+			TimeoutMs:     timeoutMs,
+			MemoryLimitMb: memoryLimitMb,
+			CPULimitMs:    cpuLimitMs,
+			Sandbox: SandboxConfig{
+				DockerBinary:    getEnv("SANDBOX_DOCKER_BINARY", "docker"),
+				PythonImage:     getEnv("SANDBOX_PYTHON_IMAGE", "python:3.12-alpine"),
+				JavaScriptImage: getEnv("SANDBOX_JAVASCRIPT_IMAGE", "node:20-alpine"),
+				JavaImage:       getEnv("SANDBOX_JAVA_IMAGE", "eclipse-temurin:21-jdk-alpine"),
+				CPPImage:        getEnv("SANDBOX_CPP_IMAGE", "gcc:14"),
+			},
+		},
+		Messaging: MessagingConfig{
+			RequestedExchange:   getEnv("REQUESTED_EVENT_EXCHANGE", "challenges.solutions.exchange"),
+			RequestedQueue:      getEnv("REQUESTED_EVENT_QUEUE", "codeexecution.solution.execution.requested"),
+			RequestedRoutingKey: getEnv("REQUESTED_EVENT_ROUTING_KEY", "challenges.solution.execution.requested"),
+			ExecutionExchange:   getEnv("EXECUTION_EVENT_EXCHANGE", "codeexecution.exchange"),
+			StartedRoutingKey:   getEnv("STARTED_EVENT_ROUTING_KEY", "codeexecution.solution.execution.started"),
+			CompletedRoutingKey: getEnv("COMPLETED_EVENT_ROUTING_KEY", "codeexecution.solution.execution.completed"),
 		},
 	}, nil
 }

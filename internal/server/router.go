@@ -1,54 +1,23 @@
 package server
 
 import (
-	"context"
 	"net/http"
-	"time"
 
 	"code-execution/internal/config"
+	executionhttp "code-execution/internal/execution/interfaces/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/jackc/pgx/v5/pgxpool"
-	amqp "github.com/rabbitmq/amqp091-go"
 )
 
-func NewRouter(cfg config.Config, pool *pgxpool.Pool, rabbitConn *amqp.Connection) *gin.Engine {
+func NewRouter(cfg config.Config, executionHandler *executionhttp.Handler) *gin.Engine {
 	router := gin.New()
 	router.Use(gin.Recovery(), gin.Logger())
 
 	router.GET("/health", func(c *gin.Context) {
-		healthCtx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
-		defer cancel()
-
-		dbErr := pool.Ping(healthCtx)
-		rabbitUp := rabbitConn != nil && !rabbitConn.IsClosed()
-		eurekaStatus := "disabled"
-		if cfg.Eureka.Enabled {
-			eurekaStatus = "enabled"
-		}
-
-		statusCode := http.StatusOK
-		status := "UP"
-		if dbErr != nil || !rabbitUp {
-			statusCode = http.StatusServiceUnavailable
-			status = "DOWN"
-		}
-
-		response := gin.H{
+		c.JSON(http.StatusOK, gin.H{
 			"service": cfg.AppName,
-			"status":  status,
-			"dependencies": gin.H{
-				"postgres": dependencyStatus(dbErr == nil),
-				"rabbitmq": dependencyStatus(rabbitUp),
-				"eureka":   eurekaStatus,
-			},
-		}
-
-		if dbErr != nil {
-			response["postgres_error"] = dbErr.Error()
-		}
-
-		c.JSON(statusCode, response)
+			"status":  "UP",
+		})
 	})
 
 	router.GET("/api/v1/ping", func(c *gin.Context) {
@@ -58,12 +27,8 @@ func NewRouter(cfg config.Config, pool *pgxpool.Pool, rabbitConn *amqp.Connectio
 		})
 	})
 
-	return router
-}
+	codeExecutionV1 := router.Group("/api/v1/code-execution")
+	executionHandler.RegisterRoutes(codeExecutionV1)
 
-func dependencyStatus(ok bool) string {
-	if ok {
-		return "UP"
-	}
-	return "DOWN"
+	return router
 }

@@ -13,6 +13,7 @@ import (
 	"code-execution/internal/config"
 	"code-execution/internal/db"
 	"code-execution/internal/discovery"
+	"code-execution/internal/execution/module"
 	"code-execution/internal/messaging"
 	"code-execution/internal/server"
 )
@@ -37,6 +38,18 @@ func main() {
 	}
 	defer rabbitConn.Close()
 
+	executionModule, err := module.New(ctx, cfg, pool, rabbitConn)
+	if err != nil {
+		log.Fatalf("execution module initialization error: %v", err)
+	}
+
+	consumerCtx, consumerCancel := context.WithCancel(context.Background())
+	defer consumerCancel()
+
+	if err := executionModule.StartConsumers(consumerCtx); err != nil {
+		log.Fatalf("execution consumers initialization error: %v", err)
+	}
+
 	eurekaClient := discovery.NewClient(cfg.Eureka)
 	heartbeatCtx, heartbeatCancel := context.WithCancel(context.Background())
 	defer heartbeatCancel()
@@ -54,7 +67,7 @@ func main() {
 		})
 	}
 
-	router := server.NewRouter(cfg, pool, rabbitConn)
+	router := server.NewRouter(cfg, executionModule.HTTPHandler)
 
 	httpServer := &http.Server{
 		Addr:         ":" + cfg.AppPort,
@@ -84,6 +97,7 @@ func main() {
 	}
 
 	heartbeatCancel()
+	consumerCancel()
 
 	if cfg.Eureka.Enabled {
 		deregisterCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
