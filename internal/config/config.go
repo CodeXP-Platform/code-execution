@@ -55,7 +55,7 @@ func Load() (Config, error) {
 		AppHost:     appHost,
 		AppPort:     appPort,
 		PostgresURL: getEnv("POSTGRES_URL", "postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable"),
-		RabbitMQURL: getEnv("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/"),
+		RabbitMQURL: getEnv("RABBITMQ_URL", "amqp://rabbitmq:rabbitmq@localhost:5672/"),
 		Eureka: EurekaConfig{
 			Enabled:           eurekaEnabled,
 			BaseURL:           getEnv("EUREKA_BASE_URL", "http://localhost:8761/eureka"),

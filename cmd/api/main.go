@@ -18,25 +18,30 @@ import (
 )
 
 func main() {
+	log.Printf("Iniciando aplicación...")
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatalf("config error: %v", err)
 	}
+	log.Printf("Configuración cargada correctamente")
 
 	ctx := context.Background()
 
+	log.Printf("Fase: Inicialización de base de datos")
 	pool, err := db.NewPool(ctx, cfg.PostgresURL)
 	if err != nil {
 		log.Fatalf("postgres connection error: %v", err)
 	}
 	defer pool.Close()
 
+	log.Printf("Fase: Inicialización de mensajería (RabbitMQ)")
 	rabbitConn, err := messaging.NewConnection(cfg.RabbitMQURL)
 	if err != nil {
 		log.Fatalf("rabbitmq connection error: %v", err)
 	}
 	defer rabbitConn.Close()
 
+	log.Printf("Fase: Configuración de Service Discovery (Eureka)")
 	eurekaClient := discovery.NewClient(cfg.Eureka)
 	heartbeatCtx, heartbeatCancel := context.WithCancel(context.Background())
 	defer heartbeatCancel()
@@ -54,6 +59,7 @@ func main() {
 		})
 	}
 
+	log.Printf("Fase: Configuración del servidor HTTP")
 	router := server.NewRouter(cfg, pool, rabbitConn)
 
 	httpServer := &http.Server{
@@ -78,17 +84,19 @@ func main() {
 
 	select {
 	case sig := <-signalCh:
-		log.Printf("shutdown signal received: %s", sig.String())
+		log.Printf("Señal de apagado recibida: %s", sig.String())
 	case err := <-serverErr:
-		log.Printf("server error received: %v", err)
+		log.Printf("Error crítico en el servidor: %v", err)
 	}
 
+	log.Printf("Iniciando proceso de apagado gradual (Graceful Shutdown)...")
 	heartbeatCancel()
 
 	if cfg.Eureka.Enabled {
+		log.Printf("Dando de baja instancia en Eureka...")
 		deregisterCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		if err := eurekaClient.Deregister(deregisterCtx); err != nil {
-			log.Printf("eureka deregister error: %v", err)
+			log.Printf("Error al dar de baja en Eureka: %v", err)
 		}
 		cancel()
 	}
@@ -97,6 +105,7 @@ func main() {
 	defer cancel()
 
 	if err := httpServer.Shutdown(shutdownCtx); err != nil {
-		log.Printf("graceful shutdown error: %v", err)
+		log.Printf("Error durante el apagado del servidor HTTP: %v", err)
 	}
+	log.Printf("Aplicación finalizada correctamente")
 }

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -34,6 +35,8 @@ func (c *Client) Register(ctx context.Context) error {
 		return nil
 	}
 
+	log.Printf("Registrando instancia en Eureka: %s (%s)", c.cfg.InstanceID, c.cfg.ServiceName)
+
 	payload := map[string]any{
 		"instance": map[string]any{
 			"instanceId": c.cfg.InstanceID,
@@ -45,7 +48,7 @@ func (c *Client) Register(ctx context.Context) error {
 				"$":        getPort(c.cfg.InstanceID),
 				"@enabled": "true",
 			},
-			"vipAddress":     strings.ToLower(c.cfg.ServiceName),
+			"vipAddress":       strings.ToLower(c.cfg.ServiceName),
 			"secureVipAddress": strings.ToLower(c.cfg.ServiceName),
 			"dataCenterInfo": map[string]any{
 				"@class": "com.netflix.appinfo.InstanceInfo$DefaultDataCenterInfo",
@@ -78,6 +81,7 @@ func (c *Client) Register(ctx context.Context) error {
 		return fmt.Errorf("eureka register failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(responseBody)))
 	}
 
+	log.Printf("Registro en Eureka exitoso")
 	return nil
 }
 
@@ -104,6 +108,7 @@ func (c *Client) SendHeartbeat(ctx context.Context) error {
 		return fmt.Errorf("eureka heartbeat failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(responseBody)))
 	}
 
+	log.Printf("Heartbeat de Eureka enviado con éxito")
 	return nil
 }
 
@@ -137,6 +142,8 @@ func (c *Client) Deregister(ctx context.Context) error {
 	if !c.cfg.Enabled {
 		return nil
 	}
+
+	log.Printf("Deregistrando instancia de Eureka: %s", c.cfg.InstanceID)
 
 	deregisterURL := fmt.Sprintf("%s/apps/%s/%s", c.baseURL(), strings.ToUpper(c.cfg.ServiceName), url.PathEscape(c.cfg.InstanceID))
 	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, deregisterURL, nil)
