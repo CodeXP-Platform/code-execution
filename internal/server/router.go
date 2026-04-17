@@ -16,7 +16,7 @@ func NewRouter(cfg config.Config, pool *pgxpool.Pool, rabbitConn *amqp.Connectio
 	router := gin.New()
 	router.Use(gin.Recovery(), gin.Logger())
 
-	router.GET("/health", func(c *gin.Context) {
+	router.GET("/api/v1/health", func(c *gin.Context) {
 		healthCtx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
 		defer cancel()
 
