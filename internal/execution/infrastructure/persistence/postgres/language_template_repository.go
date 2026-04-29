@@ -194,19 +194,29 @@ func pythonTemplate() domain.LanguageTemplate {
 	return domain.LanguageTemplate{
 		ID:         newRandomID(),
 		Language:   domain.LanguagePython,
-		Version:    "2026.04",
+		Version:    "2026.04.1",
 		Entrypoint: "main.py",
-		RunnerTemplate: `# {{USER_CODE}}
-# parse_args es helper inyectado por el runner del sandbox
+		RunnerTemplate: `import unittest
 
-def _normalize(value: str) -> str:
-		return value.replace("\r\n", "\n").rstrip()
+# =====================================================================
+# SECCIÓN 1: Dependencias y Función a testear
+# =====================================================================
+
+{{USER_CODE}}
+
+# =====================================================================
+# SECCIÓN 2: Funciones de Test
+# =====================================================================
+
+class TestSolution(unittest.TestCase):
+    def test_case(self):
+        args = """{{TEST_INPUT}}"""
+        expected = """{{EXPECTED_OUTPUT}}"""
+        actual = {{ENTRY_FUNCTION_NAME}}(*parse_args(args))
+        self.assertEqual(str(actual).strip(), expected.strip())
 
 if __name__ == "__main__":
-		args = """{{TEST_INPUT}}"""
-		expected = """{{EXPECTED_OUTPUT}}"""
-		actual = {{ENTRY_FUNCTION_NAME}}(*parse_args(args))
-		print(_normalize(str(actual)))`,
+    unittest.main(verbosity=2)`,
 		CompileCommand: nil,
 		RunCommand:     "python main.py",
 		Enabled:        true,
@@ -220,17 +230,26 @@ func javascriptTemplate() domain.LanguageTemplate {
 		Language:   domain.LanguageJavaScript,
 		Version:    "2026.04",
 		Entrypoint: "main.js",
-		RunnerTemplate: `// {{USER_CODE}}
-// parseArgs es helper inyectado por el runner del sandbox
+		RunnerTemplate: `// =====================================================================
+// SECCIÓN 1: Dependencias y Función a testear
+// =====================================================================
+const assert = require("node:assert");
+const { test, describe } = require("node:test");
 
-function normalize(value) {
-	return String(value).replace(/\r\n/g, "\n").trimEnd();
-}
+{{USER_CODE}}
 
-const testInput = ` + "`{{TEST_INPUT}}`;\n" +
-			`const expected = ` + "`{{EXPECTED_OUTPUT}}`;\n" +
-			`const actual = globalThis["{{ENTRY_FUNCTION_NAME}}"](...parseArgs(testInput));
-process.stdout.write(normalize(actual));`,
+// =====================================================================
+// SECCIÓN 2: Funciones de Test
+// =====================================================================
+
+describe("Student Code Tests", () => {
+    test("Test Case", () => {
+        const testInput = ` + "`{{TEST_INPUT}}`;\n" +
+			`        const expected = ` + "`{{EXPECTED_OUTPUT}}`;\n" +
+			`        const actual = globalThis["{{ENTRY_FUNCTION_NAME}}"](...parseArgs(testInput));
+        assert.strictEqual(String(actual).trim(), expected.trim());
+    });
+});`,
 		CompileCommand: nil,
 		RunCommand:     "node main.js",
 		Enabled:        true,

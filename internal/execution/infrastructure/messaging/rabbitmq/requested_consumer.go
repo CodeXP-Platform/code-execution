@@ -104,15 +104,19 @@ func (c *RequestedConsumer) Start(ctx context.Context) error {
 					return
 				}
 
+				log.Printf("[RequestedConsumer] Mensaje recibido (RoutingKey: %s)", delivery.RoutingKey)
+
 				var event application.SolutionExecutionRequestedEvent
 				if err := json.Unmarshal(delivery.Body, &event); err != nil {
-					log.Printf("requested event invalid payload: %v", err)
+					log.Printf("[RequestedConsumer] requested event invalid payload: %v", err)
 					_ = delivery.Nack(false, false)
 					continue
 				}
 
+				log.Printf("[RequestedConsumer] Evento decodificado - EventID: %s, SolutionID: %s", event.EventID, event.Data.SolutionID)
+
 				if err := c.executeUseCase.Execute(ctx, event); err != nil {
-					log.Printf("execute solution use case failed: %v", err)
+					log.Printf("[RequestedConsumer] execute solution use case failed (EventID: %s): %v", event.EventID, err)
 					if errors.Is(err, application.ErrInvalidInput) {
 						_ = delivery.Nack(false, false)
 						continue
@@ -121,6 +125,7 @@ func (c *RequestedConsumer) Start(ctx context.Context) error {
 					continue
 				}
 
+				log.Printf("[RequestedConsumer] Evento procesado exitosamente (EventID: %s). Enviando ACK.", event.EventID)
 				_ = delivery.Ack(false)
 			}
 		}

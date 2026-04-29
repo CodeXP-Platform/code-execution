@@ -64,8 +64,7 @@ type ExecutionCompletedEvent struct {
 type BuildScriptRequest struct {
 	UserCode          string
 	EntryFunctionName string
-	TestInput         string
-	ExpectedOutput    string
+	TestCases         []TestCaseInput
 }
 
 type BuiltScript struct {

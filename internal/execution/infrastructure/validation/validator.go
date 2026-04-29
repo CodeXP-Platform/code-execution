@@ -2,6 +2,7 @@ package validation
 
 import (
 	"fmt"
+	"log"
 	"strings"
 
 	"code-execution/internal/execution/application"
@@ -22,6 +23,7 @@ func NewValidator(rules ...Rule) *Validator {
 }
 
 func (v *Validator) Validate(language domain.Language, code string) error {
+	log.Printf("[Validator] Validando código para lenguaje: %s", language)
 	trimmed := strings.TrimSpace(code)
 	if trimmed == "" {
 		return fmt.Errorf("code is required: %w", application.ErrInvalidInput)
