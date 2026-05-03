@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"time"
 
 	"code-execution/internal/config"
 	"code-execution/internal/execution/application"
@@ -28,6 +29,52 @@ func NewRequestedConsumer(
 }
 
 func (c *RequestedConsumer) Start(ctx context.Context) error {
+	if c.conn == nil || c.conn.IsClosed() {
+		return fmt.Errorf("rabbitmq connection is not available")
+	}
+
+	log.Printf("[RequestedConsumer] Configurando consumer - Exchange: %s, Queue: %s, RoutingKey: %s",
+		c.cfg.RequestedExchange, c.cfg.RequestedQueue, c.cfg.RequestedRoutingKey)
+
+	go c.consumeWithReconnect(ctx)
+
+	return nil
+}
+
+func (c *RequestedConsumer) consumeWithReconnect(ctx context.Context) {
+	reconnectDelay := 1 * time.Second
+	maxReconnectDelay := 30 * time.Second
+
+	for {
+		select {
+		case <-ctx.Done():
+			log.Printf("[RequestedConsumer] Contexto cancelado. Deteniendo reconexión.")
+			return
+		default:
+		}
+
+		if err := c.consumeOnce(ctx); err != nil {
+			if errors.Is(ctx.Err(), context.Canceled) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				return
+			}
+			log.Printf("[RequestedConsumer] Consumer terminado con error: %v. Reintentando en %v...", err, reconnectDelay)
+
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(reconnectDelay):
+				reconnectDelay = reconnectDelay * 2
+				if reconnectDelay > maxReconnectDelay {
+					reconnectDelay = maxReconnectDelay
+				}
+			}
+		} else {
+			return
+		}
+	}
+}
+
+func (c *RequestedConsumer) consumeOnce(ctx context.Context) error {
 	if c.conn == nil || c.conn.IsClosed() {
 		return fmt.Errorf("rabbitmq connection is not available")
 	}
@@ -93,45 +140,49 @@ func (c *RequestedConsumer) Start(ctx context.Context) error {
 		return fmt.Errorf("consume from queue failed: %w", err)
 	}
 
-	go func() {
-		defer channel.Close()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case delivery, ok := <-deliveries:
-				if !ok {
-					return
-				}
+	log.Printf("[RequestedConsumer] Consumer activo y escuchando mensajes...")
 
-				log.Printf("[RequestedConsumer] Mensaje recibido (RoutingKey: %s)", delivery.RoutingKey)
+	defer func() {
+		channel.Close()
+		log.Printf("[RequestedConsumer] Canal cerrado.")
+	}()
 
-				var event application.SolutionExecutionRequestedEvent
-				if err := json.Unmarshal(delivery.Body, &event); err != nil {
-					log.Printf("[RequestedConsumer] requested event invalid payload: %v", err)
+	for {
+		select {
+		case <-ctx.Done():
+			log.Printf("[RequestedConsumer] Contexto cancelado. Deteniendo consumer.")
+			return nil
+		case delivery, ok := <-deliveries:
+			if !ok {
+				log.Printf("[RequestedConsumer] Canal de entregas cerrado. Posible desconexión de RabbitMQ.")
+				return fmt.Errorf("deliveries channel closed")
+			}
+
+			log.Printf("[RequestedConsumer] Mensaje recibido (RoutingKey: %s, DeliveryTag: %d)", delivery.RoutingKey, delivery.DeliveryTag)
+
+			var event application.SolutionExecutionRequestedEvent
+			if err := json.Unmarshal(delivery.Body, &event); err != nil {
+				log.Printf("[RequestedConsumer] requested event invalid payload: %v", err)
+				_ = delivery.Nack(false, false)
+				continue
+			}
+
+			log.Printf("[RequestedConsumer] Evento decodificado - EventID: %s, SolutionID: %s", event.EventID, event.Data.SolutionID)
+
+			if err := c.executeUseCase.Execute(ctx, event); err != nil {
+				log.Printf("[RequestedConsumer] execute solution use case failed (EventID: %s): %v", event.EventID, err)
+				if errors.Is(err, application.ErrInvalidInput) {
 					_ = delivery.Nack(false, false)
 					continue
 				}
-
-				log.Printf("[RequestedConsumer] Evento decodificado - EventID: %s, SolutionID: %s", event.EventID, event.Data.SolutionID)
-
-				if err := c.executeUseCase.Execute(ctx, event); err != nil {
-					log.Printf("[RequestedConsumer] execute solution use case failed (EventID: %s): %v", event.EventID, err)
-					if errors.Is(err, application.ErrInvalidInput) {
-						_ = delivery.Nack(false, false)
-						continue
-					}
-					_ = delivery.Nack(false, true)
-					continue
-				}
-
-				log.Printf("[RequestedConsumer] Evento procesado exitosamente (EventID: %s). Enviando ACK.", event.EventID)
-				_ = delivery.Ack(false)
+				_ = delivery.Nack(false, true)
+				continue
 			}
-		}
-	}()
 
-	return nil
+			log.Printf("[RequestedConsumer] Evento procesado exitosamente (EventID: %s). Enviando ACK.", event.EventID)
+			_ = delivery.Ack(false)
+		}
+	}
 }
 
 var _ application.EventConsumer = (*RequestedConsumer)(nil)

@@ -178,7 +178,7 @@ func (u *ExecuteSolutionUseCase) Execute(ctx context.Context, requested Solution
 	})
 	if buildErr != nil {
 		log.Printf("[Execute] Error construyendo script para JobID %s: %v", job.ID, buildErr)
-		return u.finishWithGlobalFailure(ctx, &job, totalTime, fmt.Sprintf("script build failed: %v", buildErr), testResults)
+		return u.finishWithGlobalFailure(ctx, &job, totalTime, fmt.Sprintf("script build failed: %v", buildErr), testResults, requested)
 	}
 
 	executionResult, execErr := u.sandboxRunner.Execute(ctx, SandboxExecutionRequest{
@@ -194,7 +194,7 @@ func (u *ExecuteSolutionUseCase) Execute(ctx context.Context, requested Solution
 	})
 	if execErr != nil {
 		log.Printf("[Execute] Error de ejecución en sandbox para JobID %s: %v", job.ID, execErr)
-		return u.finishWithGlobalFailure(ctx, &job, totalTime, fmt.Sprintf("sandbox execution failed: %v", execErr), testResults)
+		return u.finishWithGlobalFailure(ctx, &job, totalTime, fmt.Sprintf("sandbox execution failed: %v", execErr), testResults, requested)
 	}
 
 	totalTime = executionResult.ExecutionTimeMs
@@ -278,7 +278,7 @@ func (u *ExecuteSolutionUseCase) Execute(ctx context.Context, requested Solution
 		return err
 	}
 
-	completeEvent := buildCompletedEvent(u.uuidGenerator, u.clock, job, testResults)
+	completeEvent := buildCompletedEvent(u.uuidGenerator, u.clock, job, testResults, requested)
 	if err := u.publisher.PublishExecutionCompleted(ctx, completeEvent); err != nil {
 		log.Printf("[Execute] Error publicando evento Completed para JobID %s: %v", job.ID, err)
 		return err
@@ -333,7 +333,7 @@ func (u *ExecuteSolutionUseCase) completeAsGlobalFailure(
 		return err
 	}
 
-	completeEvent := buildCompletedEvent(u.uuidGenerator, u.clock, job, nil)
+	completeEvent := buildCompletedEvent(u.uuidGenerator, u.clock, job, nil, requested)
 	if err := u.publisher.PublishExecutionCompleted(ctx, completeEvent); err != nil {
 		return err
 	}
@@ -347,6 +347,7 @@ func (u *ExecuteSolutionUseCase) finishWithGlobalFailure(
 	totalTime int,
 	globalError string,
 	testResults []domain.ExecutionTestResult,
+	requested SolutionExecutionRequestedEvent,
 ) error {
 	log.Printf("[FinishGlobalFailure] Fallo global durante tests para JobID %s: %s", job.ID, globalError)
 	if len(testResults) > 0 {
@@ -363,7 +364,7 @@ func (u *ExecuteSolutionUseCase) finishWithGlobalFailure(
 		return err
 	}
 
-	completeEvent := buildCompletedEvent(u.uuidGenerator, u.clock, *job, testResults)
+	completeEvent := buildCompletedEvent(u.uuidGenerator, u.clock, *job, testResults, requested)
 	if err := u.publisher.PublishExecutionCompleted(ctx, completeEvent); err != nil {
 		return err
 	}
@@ -376,12 +377,17 @@ func buildCompletedEvent(
 	clock Clock,
 	job domain.ExecutionJob,
 	testResults []domain.ExecutionTestResult,
+	requested SolutionExecutionRequestedEvent,
 ) ExecutionCompletedEvent {
 	event := ExecutionCompletedEvent{}
 	event.EventID = uuidSafe(uuidGenerator)
 	event.EventType = "SolutionExecutionCompletedEvent"
 	event.Timestamp = clock.Now().UTC()
 	event.Data.SolutionID = job.SolutionID
+	event.Data.AttemptID = requested.Data.AttemptID
+	event.Data.ChallengeID = requested.Data.ChallengeID
+	event.Data.UserID = requested.Data.UserID
+	event.Data.Code = requested.Data.Code
 	event.Data.ExecutionID = job.ID
 	event.Data.IsSuccessful = eventSuccess(job, testResults)
 	if job.TotalExecutionTimeMs != nil {
