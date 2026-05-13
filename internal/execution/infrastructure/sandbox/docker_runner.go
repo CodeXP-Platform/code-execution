@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -83,6 +84,8 @@ func (r *DockerRunner) runDockerCommand(
 	cpuLimitMs int,
 	timeoutMs int,
 ) (application.SandboxExecutionResult, error) {
+	log.Printf("[DockerRunner] Iniciando contenedor con imagen: %s", image)
+	log.Printf("[DockerRunner] Comando interno a ejecutar: %s", command)
 	dockerArgs := []string{
 		"run",
 		"--rm",
@@ -114,7 +117,14 @@ func (r *DockerRunner) runDockerCommand(
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
+	log.Printf("[DockerRunner] Ejecutando comando docker: %v", cmd.Args)
 	err := cmd.Run()
+
+	log.Printf("[DockerRunner] Contenedor finalizado. Salida estándar (stdout): %q", stdout.String())
+	if stderr.Len() > 0 {
+		log.Printf("[DockerRunner] Salida de error (stderr): %q", stderr.String())
+	}
+
 	result := application.SandboxExecutionResult{
 		Output:      stdout.String(),
 		ErrorOutput: stderr.String(),

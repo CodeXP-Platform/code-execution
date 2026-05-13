@@ -212,6 +212,10 @@ Se publica al finalizar el procesamiento de todos los tests o al detectar error 
 	"data": {
 		"solutionId": "uuid-solution-123",
 		"executionId": "uuid-execution-999",
+		"attemptId": "uuid-attempt-456",
+		"challengeId": "uuid-challenge-789",
+		"userId": "uuid-user-000",
+		"code": "def sumar(a, b):\n    return a + b",
 		"isSuccessful": false,
 		"totalExecutionTimeMs": 42,
 		"globalError": null,

@@ -19,6 +19,9 @@ type SolutionExecutionRequestedEvent struct {
 	Timestamp time.Time `json:"timestamp"`
 	Data      struct {
 		SolutionID        string          `json:"solutionId"`
+		AttemptID         string          `json:"attemptId"`   // Agregado
+		ChallengeID       string          `json:"challengeId"` // Agregado
+		UserID            string          `json:"userId"`      // Agregado
 		Language          string          `json:"language"`
 		EntryFunctionName string          `json:"entryFunctionName"`
 		Code              string          `json:"code"`
@@ -53,6 +56,10 @@ type ExecutionCompletedEvent struct {
 	Timestamp time.Time `json:"timestamp"`
 	Data      struct {
 		SolutionID           string                         `json:"solutionId"`
+		AttemptID            string                         `json:"attemptId"`   // Agregado
+		ChallengeID          string                         `json:"challengeId"` // Agregado
+		UserID               string                         `json:"userId"`      // Agregado
+		Code                 string                         `json:"code"`        // Agregado
 		ExecutionID          string                         `json:"executionId"`
 		IsSuccessful         bool                           `json:"isSuccessful"`
 		TotalExecutionTimeMs int                            `json:"totalExecutionTimeMs"`
@@ -64,8 +71,7 @@ type ExecutionCompletedEvent struct {
 type BuildScriptRequest struct {
 	UserCode          string
 	EntryFunctionName string
-	TestInput         string
-	ExpectedOutput    string
+	TestCases         []TestCaseInput
 }
 
 type BuiltScript struct {

@@ -27,13 +27,63 @@ func (TemplateScriptBuilder) Build(template domain.LanguageTemplate, request app
 	replaced := template.RunnerTemplate
 	replaced = strings.ReplaceAll(replaced, "{{USER_CODE}}", fullUserCode)
 
-	// Escapar inputs según el lenguaje para evitar errores de sintaxis en el código generado
-	safeInput := escapeString(template.Language, request.TestInput)
-	safeExpected := escapeString(template.Language, request.ExpectedOutput)
-
-	replaced = strings.ReplaceAll(replaced, "{{TEST_INPUT}}", safeInput)
-	replaced = strings.ReplaceAll(replaced, "{{EXPECTED_OUTPUT}}", safeExpected)
 	replaced = strings.ReplaceAll(replaced, "{{ENTRY_FUNCTION_NAME}}", entryFunction)
+
+	if template.Language == domain.LanguagePython {
+		var testCasesCode strings.Builder
+		for i, tc := range request.TestCases {
+			safeInput := escapeString(template.Language, tc.Input)
+			safeExpected := escapeString(template.Language, tc.ExpectedOutput)
+			testCasesCode.WriteString(fmt.Sprintf(`    def test_case_%d(self):
+        args = """%s"""
+        expected = """%s"""
+        actual = %s(*parse_args(args))
+        self.assertEqual(str(actual).strip(), expected.strip())
+`, i, safeInput, safeExpected, entryFunction))
+		}
+
+		// Reemplazar el bloque dummy del template original
+		dummyBlock := `    def test_case(self):
+        args = """{{TEST_INPUT}}"""
+        expected = """{{EXPECTED_OUTPUT}}"""
+        actual = {{ENTRY_FUNCTION_NAME}}(*parse_args(args))
+        self.assertEqual(str(actual).strip(), expected.strip())`
+		dummyBlock = strings.ReplaceAll(dummyBlock, "{{ENTRY_FUNCTION_NAME}}", entryFunction)
+		replaced = strings.ReplaceAll(replaced, dummyBlock, testCasesCode.String())
+
+	} else if template.Language == domain.LanguageJavaScript {
+		var testCasesCode strings.Builder
+		for i, tc := range request.TestCases {
+			safeInput := escapeString(template.Language, tc.Input)
+			safeExpected := escapeString(template.Language, tc.ExpectedOutput)
+			testCasesCode.WriteString(fmt.Sprintf(`    test("test_case_%d", () => {
+        const testInput = `+"`%s`"+`;
+        const expected = `+"`%s`"+`;
+        const actual = globalThis["%s"](...parseArgs(testInput));
+        assert.strictEqual(String(actual).trim(), expected.trim());
+    });
+`, i, safeInput, safeExpected, entryFunction))
+		}
+
+		// Reemplazar el bloque dummy del template original
+		dummyBlock := `    test("Test Case", () => {
+        const testInput = ` + "`{{TEST_INPUT}}`" + `;
+        const expected = ` + "`{{EXPECTED_OUTPUT}}`" + `;
+        const actual = globalThis["{{ENTRY_FUNCTION_NAME}}"](...parseArgs(testInput));
+        assert.strictEqual(String(actual).trim(), expected.trim());
+    });`
+		dummyBlock = strings.ReplaceAll(dummyBlock, "{{ENTRY_FUNCTION_NAME}}", entryFunction)
+		replaced = strings.ReplaceAll(replaced, dummyBlock, testCasesCode.String())
+
+	} else {
+		// Fallback for java and cpp (using the first test case for now)
+		if len(request.TestCases) > 0 {
+			safeInput := escapeString(template.Language, request.TestCases[0].Input)
+			safeExpected := escapeString(template.Language, request.TestCases[0].ExpectedOutput)
+			replaced = strings.ReplaceAll(replaced, "{{TEST_INPUT}}", safeInput)
+			replaced = strings.ReplaceAll(replaced, "{{EXPECTED_OUTPUT}}", safeExpected)
+		}
+	}
 
 	return application.BuiltScript{
 		Entrypoint:     template.Entrypoint,
