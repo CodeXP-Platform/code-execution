@@ -152,11 +152,26 @@ func (u *ExecuteSolutionUseCase) Execute(ctx context.Context, requested Solution
 		return err
 	}
 
+	testResults := make([]domain.ExecutionTestResult, 0, len(requested.Data.TestCases))
+	totalTime := 0
+
+	log.Printf("[Execute] Construyendo script para JobID %s", job.ID)
+	builtScript, buildErr := u.scriptBuilder.Build(*template, BuildScriptRequest{
+		UserCode:          requested.Data.Code,
+		EntryFunctionName: requested.Data.EntryFunctionName,
+		TestCases:         requested.Data.TestCases,
+	})
+
+	// Emit EXECUTING event right before sandbox runs (or before surfacing a build failure),
+	// so the consuming service always sees EXECUTING before COMPLETED/FAILED.
 	startedEvent := ExecutionStartedEvent{}
 	startedEvent.EventID = uuidSafe(u.uuidGenerator)
 	startedEvent.EventType = "SolutionExecutionStartedEvent"
 	startedEvent.Timestamp = u.clock.Now().UTC()
 	startedEvent.Data.SolutionID = job.SolutionID
+	startedEvent.Data.AttemptID = requested.Data.AttemptID
+	startedEvent.Data.ChallengeID = requested.Data.ChallengeID
+	startedEvent.Data.UserID = requested.Data.UserID
 	startedEvent.Data.ExecutionID = job.ID
 	startedEvent.Data.StartedAt = *job.StartedAt
 
@@ -166,20 +181,12 @@ func (u *ExecuteSolutionUseCase) Execute(ctx context.Context, requested Solution
 	}
 	log.Printf("[Execute] Evento Started publicado para JobID %s", job.ID)
 
-	testResults := make([]domain.ExecutionTestResult, 0, len(requested.Data.TestCases))
-	totalTime := 0
-
-	log.Printf("[Execute] Ejecutando test suite de %d casos de prueba para JobID %s", len(requested.Data.TestCases), job.ID)
-
-	builtScript, buildErr := u.scriptBuilder.Build(*template, BuildScriptRequest{
-		UserCode:          requested.Data.Code,
-		EntryFunctionName: requested.Data.EntryFunctionName,
-		TestCases:         requested.Data.TestCases,
-	})
 	if buildErr != nil {
 		log.Printf("[Execute] Error construyendo script para JobID %s: %v", job.ID, buildErr)
 		return u.finishWithGlobalFailure(ctx, &job, totalTime, fmt.Sprintf("script build failed: %v", buildErr), testResults, requested)
 	}
+
+	log.Printf("[Execute] Ejecutando test suite de %d casos de prueba para JobID %s", len(requested.Data.TestCases), job.ID)
 
 	executionResult, execErr := u.sandboxRunner.Execute(ctx, SandboxExecutionRequest{
 		Language:       language,

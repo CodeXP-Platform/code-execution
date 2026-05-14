@@ -35,6 +35,9 @@ type ExecutionStartedEvent struct {
 	Timestamp time.Time `json:"timestamp"`
 	Data      struct {
 		SolutionID  string    `json:"solutionId"`
+		AttemptID   string    `json:"attemptId"`
+		ChallengeID string    `json:"challengeId"`
+		UserID      string    `json:"userId"`
 		ExecutionID string    `json:"executionId"`
 		StartedAt   time.Time `json:"startedAt"`
 	} `json:"data"`
