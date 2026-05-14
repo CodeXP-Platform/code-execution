@@ -44,6 +44,11 @@ func New(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, rabbitConn 
 	strategyFactory := languages.NewStrategyFactory(cfg.Execution.Sandbox)
 	scriptBuilder := scripting.NewTemplateScriptBuilder()
 	sandboxRunner := sandbox.NewDockerRunner(cfg.Execution.Sandbox)
+
+	if err := sandboxRunner.EnsureImages(ctx); err != nil {
+		return nil, fmt.Errorf("docker image validation failed: %w", err)
+	}
+
 	validator := validation.NewValidator(
 		validation.NewMaxCodeLengthRule(25_000),
 		validation.NewForbiddenTokenRule(),

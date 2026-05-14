@@ -75,6 +75,42 @@ func (r *DockerRunner) Healthy(ctx context.Context) error {
 	return nil
 }
 
+// EnsureImages checks that all configured language images are available locally,
+// pulling any that are missing. Called once at startup to prevent runtime failures.
+func (r *DockerRunner) EnsureImages(ctx context.Context) error {
+	images := []string{
+		r.cfg.PythonImage,
+		r.cfg.JavaScriptImage,
+		r.cfg.JavaImage,
+		r.cfg.CPPImage,
+	}
+
+	for _, image := range images {
+		if err := r.ensureImage(ctx, image); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *DockerRunner) ensureImage(ctx context.Context, image string) error {
+	checkCmd := exec.CommandContext(ctx, r.cfg.DockerBinary, "image", "inspect", "--format", "{{.Id}}", image)
+	if err := checkCmd.Run(); err == nil {
+		log.Printf("[DockerRunner] Image already present: %s", image)
+		return nil
+	}
+
+	log.Printf("[DockerRunner] Image not found locally, pulling: %s", image)
+	pullCmd := exec.CommandContext(ctx, r.cfg.DockerBinary, "pull", image)
+	pullCmd.Stdout = os.Stdout
+	pullCmd.Stderr = os.Stderr
+	if err := pullCmd.Run(); err != nil {
+		return fmt.Errorf("failed to pull docker image %s: %w", image, err)
+	}
+	log.Printf("[DockerRunner] Image pulled successfully: %s", image)
+	return nil
+}
+
 func (r *DockerRunner) runDockerCommand(
 	ctx context.Context,
 	workdir string,
